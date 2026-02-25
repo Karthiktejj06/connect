@@ -1,5 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
-import { io } from 'socket.io-client';
+import { API_BASE_URL } from '../config';
 
 const useSocket = (roomId, user) => {
   const [socket, setSocket] = useState(null);
@@ -9,7 +8,7 @@ const useSocket = (roomId, user) => {
     if (!roomId || !user) return;
 
     // Connect to the server
-    const newSocket = io(import.meta.env.VITE_API_URL);
+    const newSocket = io(API_BASE_URL);
     socketRef.current = newSocket;
     setSocket(newSocket);
 

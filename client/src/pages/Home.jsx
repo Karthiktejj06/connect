@@ -4,6 +4,7 @@ import axios from 'axios';
 import { toast } from 'react-toastify';
 import { Plus, Users, ArrowRight, User, LogOut, Settings, Trash2, Clock } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { API_URL } from '../config';
 import ProfileSettings from '../components/ProfileSettings';
 
 const Home = () => {
@@ -21,7 +22,7 @@ const Home = () => {
     const generatedId = Math.random().toString(36).substring(2, 9);
     
     try {
-      await axios.post(`${import.meta.env.VITE_API_URL}/api/rooms`, { name: roomName, roomId: generatedId });
+      await axios.post(`${API_URL}/api/rooms`, { name: roomName, roomId: generatedId });
       toast.success('Room created!');
       navigate(`/room/${generatedId}`);
     } catch (error) {

@@ -1,50 +1,60 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Share2, LogOut, Monitor, Moon, Sun, Users, MessageSquare, Files, Info, X } from 'lucide-react';
+import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
-import { useTheme } from '../context/ThemeContext';
+import { 
+  Users, ChatBubble, Layout, Video, PhoneOff, Mic, MicOff, VideoOff, 
+  Monitor, ScreenShareOff, ChevronLeft, ChevronRight, Send, Download,
+  Maximize2, Minimize2, Share2, LogOut, X
+} from 'lucide-react';
 import useSocket from '../hooks/useSocket';
 import Whiteboard from '../components/Whiteboard';
 import Toolbar from '../components/Toolbar';
 import Chat from '../components/Chat';
-import axios from 'axios';
+import { useTheme } from '../context/ThemeContext';
 import { toast } from 'react-toastify';
+import { API_URL } from '../config';
 
 const Room = () => {
   const { roomId } = useParams();
   const { user } = useAuth();
+  const navigate = useNavigate();
   const { theme, toggleTheme } = useTheme();
+  const [roomData, setRoomData] = useState(null);
+  
+  // States for features
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [chatOpen, setChatOpen] = useState(true);
+  const [activeTab, setActiveTab] = useState('chat');
+  
+  // Socket and Collaboration
   const socket = useSocket(roomId, user);
   
-  // Workspace States
-  const [roomData, setRoomData] = useState(null);
-  const [users, setUsers] = useState([]);
+  // Media States
+  const [localStream, setLocalStream] = useState(null);
+  const [screenStream, setScreenStream] = useState(null);
+  const [remoteFaceCams, setRemoteFaceCams] = useState({}); // { username: stream }
+  const [remoteScreens, setRemoteScreens] = useState({}); // { username: stream }
+  const [focusedStream, setFocusedStream] = useState(null); // { type, username, stream }
+  const [isFaceCamActive, setIsFaceCamActive] = useState(false);
+  const [isSharing, setIsSharing] = useState(false);
+  const [mainStream, setMainStream] = useState(null);
   const [chatMessages, setChatMessages] = useState([]);
-  const [activeTab, setActiveTab] = useState('chat');
+  const [isStreamExpanded, setIsStreamExpanded] = useState(false);
+  const [users, setUsers] = useState([]);
   const [tool, setTool] = useState('pencil');
   const [color, setColor] = useState('#8b5cf6');
   const [size, setSize] = useState(5);
-  const navigate = useNavigate();
 
-  // Video/Stream States
-  const [isSharing, setIsSharing] = useState(false);
-  const [isFaceCamActive, setIsFaceCamActive] = useState(false);
-  const [mainStream, setMainStream] = useState(null); // Screen share
-  const [remoteFaceCams, setRemoteFaceCams] = useState({}); // { username: stream }
-  const [focusedStream, setFocusedStream] = useState(null); // { username, stream, type }
-  const [isStreamExpanded, setIsStreamExpanded] = useState(false);
-  
   const peerConnections = useRef({}); // { username: RTCPeerConnection }
-  const localStream = useRef(null);
+  const remoteVideosRef = useRef({}); // To manage video elements
+  const localStreamRef = useRef(null);
   const localFaceCam = useRef(null);
 
   useEffect(() => {
     if (!socket) return;
-    
-    // Register ALL listeners FIRST before joining room
-    console.log('Room: Registering socket listeners...');
 
-    // Chat message listener (centralized here to avoid race conditions)
+    // Chat message listener
     const handleChatMessage = (msg) => {
       setChatMessages((prev) => [...prev, msg]);
     };
@@ -257,7 +267,7 @@ const Room = () => {
   useEffect(() => {
     const fetchRoom = async () => {
       try {
-        const { data } = await axios.get(`${import.meta.env.VITE_API_URL}/api/rooms/${roomId}`);
+        const { data } = await axios.get(`${API_URL}/api/rooms/${roomId}`);
         setRoomData(data);
         
         // Save to Recent Sessions
