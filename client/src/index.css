@@ -1,0 +1,353 @@
+:root {
+  /* AuraBoard Aesthetic Tokens (Evolution of VividBoard) */
+  --aura-primary: #8b5cf6;
+  --aura-primary-muted: rgba(139, 92, 246, 0.2);
+  --aura-secondary: #06b6d4;
+  --aura-accent: #ec4899;
+
+  --aura-bg: #fcfaff;
+  --aura-card: rgba(255, 255, 255, 0.75);
+  --aura-text: #1e293b;
+  --aura-text-muted: #64748b;
+  --aura-border: rgba(226, 232, 240, 0.8);
+
+  --aura-glass: rgba(255, 255, 255, 0.45);
+  --aura-glass-border: rgba(255, 255, 255, 0.6);
+  --aura-glow: 0 0 20px rgba(139, 92, 246, 0.15);
+
+  --radius-sm: 10px;
+  --radius-md: 18px;
+  --radius-lg: 28px;
+  --radius-full: 9999px;
+
+  --shadow-soft: 0 4px 20px -2px rgba(0, 0, 0, 0.05);
+  --shadow-aura: 0 20px 40px -15px rgba(139, 92, 246, 0.25);
+  --shadow-button: 0 8px 16px -4px rgba(139, 92, 246, 0.3);
+}
+
+[data-theme='dark'] {
+  --aura-primary: #a78bfa;
+  --aura-primary-muted: rgba(167, 139, 250, 0.1);
+  --aura-bg: #030712;
+  --aura-card: rgba(17, 24, 39, 0.75);
+  --aura-text: #f8fafc;
+  --aura-text-muted: #94a3b8;
+  --aura-border: rgba(31, 41, 55, 0.8);
+  --aura-glass: rgba(17, 24, 39, 0.5);
+  --aura-glass-border: rgba(255, 255, 255, 0.08);
+  --aura-glow: 0 0 30px rgba(167, 139, 250, 0.1);
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  font-family: 'Outfit', 'Inter', -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  background-color: var(--aura-bg);
+  background-image:
+    radial-gradient(at 0% 0%, var(--aura-primary-muted) 0px, transparent 50%),
+    radial-gradient(at 100% 100%, rgba(6, 182, 212, 0.05) 0px, transparent 50%);
+  color: var(--aura-text);
+  line-height: 1.6;
+  transition: background-color 0.4s cubic-bezier(0.4, 0, 0.2, 1), color 0.4s ease;
+  overflow-x: hidden;
+  min-height: 100vh;
+}
+
+.aura-glass {
+  background: var(--aura-glass);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border: 1px solid var(--aura-glass-border);
+  box-shadow: var(--shadow-soft);
+}
+
+.btn-aura {
+  padding: 0.8rem 1.6rem;
+  border-radius: var(--radius-md);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+  border: 1px solid transparent;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  font-size: 0.95rem;
+  letter-spacing: -0.01em;
+}
+
+.btn-aura-primary {
+  background: linear-gradient(135deg, var(--aura-primary), #d946ef);
+  color: white;
+  box-shadow: var(--shadow-button);
+}
+
+.btn-aura-primary:hover {
+  transform: translateY(-3px) scale(1.02);
+  box-shadow: 0 12px 24px -6px rgba(139, 92, 246, 0.4);
+  filter: brightness(1.05);
+}
+
+.btn-aura-secondary {
+  background: var(--aura-glass);
+  backdrop-filter: blur(10px);
+  border-color: var(--aura-border);
+  color: var(--aura-text);
+}
+
+.btn-aura-secondary:hover {
+  background: var(--aura-border);
+  transform: translateY(-2px);
+}
+
+.aura-card {
+  background: var(--aura-card);
+  backdrop-filter: blur(20px);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--aura-glass-border);
+  padding: 2.5rem;
+  box-shadow: var(--shadow-soft);
+  transition: all 0.4s ease;
+}
+
+.aura-card:hover {
+  transform: translateY(-6px);
+  box-shadow: var(--shadow-aura);
+  border-color: var(--aura-primary-muted);
+}
+
+.aura-input {
+  width: 100%;
+  padding: 1rem 1.5rem;
+  border: 1px solid var(--aura-border);
+  border-radius: var(--radius-md);
+  background: var(--aura-glass);
+  color: var(--aura-text);
+  font-size: 1rem;
+  transition: all 0.3s ease;
+}
+
+.aura-input:focus {
+  outline: none;
+  border-color: var(--aura-primary);
+  box-shadow: 0 0 0 4px var(--aura-primary-muted);
+}
+
+.aura-logo {
+  font-size: 2rem;
+  font-weight: 900;
+  letter-spacing: -0.04em;
+  background: linear-gradient(135deg, var(--aura-primary) 0%, var(--aura-secondary) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  text-decoration: none;
+  filter: drop-shadow(0 2px 10px rgba(139, 92, 246, 0.2));
+}
+
+.aura-badge {
+  padding: 0.35rem 0.85rem;
+  border-radius: var(--radius-full);
+  font-size: 0.7rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  background: var(--aura-primary-muted);
+  color: var(--aura-primary);
+  border: 1px solid var(--aura-primary-muted);
+}
+
+.room-layout {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+}
+
+.room-toolbar {
+  width: 80px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--aura-border);
+  background: var(--aura-bg);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 1.25rem 0.5rem;
+  z-index: 40;
+  overflow-y: auto;
+}
+
+.room-main {
+  flex: 1;
+  position: relative;
+  background: var(--aura-bg);
+  padding: 1.25rem;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-width: 400px;
+}
+
+.room-panel {
+  flex: 0 0 clamp(280px, 25%, 380px);
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--aura-border);
+  background: var(--aura-bg);
+  z-index: 40;
+  transition: width 0.3s ease, flex 0.3s ease;
+}
+
+.room-header {
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 1.5rem;
+  border-bottom: 1px solid var(--aura-border);
+  z-index: 100;
+  flex-shrink: 0;
+}
+
+.floating-controls {
+  position: absolute;
+  bottom: 2.5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 0.6rem;
+  border-radius: var(--radius-full);
+  display: flex;
+  gap: 0.6rem;
+  box-shadow: var(--shadow-aura);
+  z-index: 100;
+}
+
+/* Responsive Aura Layouts */
+@media (max-width: 1024px) {
+  .room-panel {
+    flex: 0 0 clamp(260px, 20%, 320px);
+  }
+}
+
+@media (max-width: 500px) {
+  .room-layout {
+    flex-direction: column;
+    height: calc(100vh - 64px);
+    overflow: hidden;
+  }
+
+  .room-container {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+  }
+
+  .room-toolbar {
+    width: 100% !important;
+    height: auto !important;
+    flex-direction: row !important;
+    overflow-x: auto;
+    border-right: none !important;
+    border-bottom: 1px solid var(--aura-border);
+    padding: 0.4rem !important;
+    justify-content: flex-start;
+    flex-shrink: 0;
+  }
+
+  .room-main {
+    padding: 0.5rem !important;
+    flex: 1 1 auto !important;
+    min-height: 0;
+    position: relative;
+    height: auto !important;
+  }
+
+  .room-panel {
+    width: 100% !important;
+    flex: 0 0 40% !important;
+    min-height: 200px;
+    border-left: none !important;
+    border-top: 1px solid var(--aura-border);
+    height: auto !important;
+  }
+
+  .room-controls {
+    bottom: 0.75rem !important;
+    padding: 0.35rem !important;
+    gap: 0.35rem !important;
+  }
+
+  .room-controls .btn-aura {
+    width: 40px !important;
+    height: 40px !important;
+    padding: 0.5rem !important;
+  }
+
+  .stream-overlay {
+    width: 94% !important;
+    right: 3% !important;
+    top: 3% !important;
+  }
+}
+
+.aura-glass:hover .expand-hint {
+  opacity: 1 !important;
+}
+
+@keyframes pulse {
+  0% {
+    transform: scale(1);
+    opacity: 1;
+  }
+
+  50% {
+    transform: scale(1.1);
+    opacity: 0.8;
+  }
+
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+/* Scrollbar Customization */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--aura-border);
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--aura-primary);
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.6s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}

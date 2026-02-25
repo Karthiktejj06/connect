@@ -1,0 +1,9 @@
+/* Cleared default Vite styles to avoid conflicts with VividBoard premium design */
+html,
+body {
+  height: 100%;
+}
+
+#root {
+  height: 100%;
+}
