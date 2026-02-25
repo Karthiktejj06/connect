@@ -22,7 +22,7 @@ const Home = () => {
     const generatedId = Math.random().toString(36).substring(2, 9);
     
     try {
-      await axios.post(`${API_URL}/api/rooms`, { name: roomName, roomId: generatedId });
+      await axios.post(`${API_URL}/rooms`, { name: roomName, roomId: generatedId });
       toast.success('Room created!');
       navigate(`/room/${generatedId}`);
     } catch (error) {

@@ -267,7 +267,7 @@ const Room = () => {
   useEffect(() => {
     const fetchRoom = async () => {
       try {
-        const { data } = await axios.get(`${API_URL}/api/rooms/${roomId}`);
+        const { data } = await axios.get(`${API_URL}/rooms/${roomId}`);
         setRoomData(data);
         
         // Save to Recent Sessions
