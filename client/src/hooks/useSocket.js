@@ -9,7 +9,7 @@ const useSocket = (roomId, user) => {
     if (!roomId || !user) return;
 
     // Connect to the server
-    const newSocket = io('http://localhost:5007');
+    const newSocket = io(import.meta.env.VITE_API_URL);
     socketRef.current = newSocket;
     setSocket(newSocket);
 

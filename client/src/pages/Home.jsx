@@ -21,7 +21,7 @@ const Home = () => {
     const generatedId = Math.random().toString(36).substring(2, 9);
     
     try {
-      await axios.post('http://localhost:5007/api/rooms', { name: roomName, roomId: generatedId });
+      await axios.post(`${import.meta.env.VITE_API_URL}/api/rooms`, { name: roomName, roomId: generatedId });
       toast.success('Room created!');
       navigate(`/room/${generatedId}`);
     } catch (error) {

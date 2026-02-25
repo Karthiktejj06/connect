@@ -257,7 +257,7 @@ const Room = () => {
   useEffect(() => {
     const fetchRoom = async () => {
       try {
-        const { data } = await axios.get(`http://localhost:5007/api/rooms/${roomId}`);
+        const { data } = await axios.get(`${import.meta.env.VITE_API_URL}/api/rooms/${roomId}`);
         setRoomData(data);
         
         // Save to Recent Sessions
