@@ -237,11 +237,13 @@ const Room = () => {
 
       // Stop tracks on all PCs
       Object.values(peerConnections.current).forEach(pc => {
-        pc.getSenders().forEach(sender => {
-          if (sender.track && sender.track.label.includes('screen')) {
-            pc.removeTrack(sender);
-          }
-        });
+        if (pc.signalingState !== 'closed') {
+          pc.getSenders().forEach(sender => {
+            if (sender.track && sender.track.label.includes('screen')) {
+              pc.removeTrack(sender);
+            }
+          });
+        }
       });
 
       socket.emit('signaling', { roomId, type: 'stream-stopped', data: { streamType: 'screen' } });
@@ -289,11 +291,13 @@ const Room = () => {
 
       // Stop tracks on all PCs
       Object.values(peerConnections.current).forEach(pc => {
-        pc.getSenders().forEach(sender => {
-          if (sender.track && !sender.track.label.includes('screen')) {
-            pc.removeTrack(sender);
-          }
-        });
+        if (pc.signalingState !== 'closed') {
+          pc.getSenders().forEach(sender => {
+            if (sender.track && !sender.track.label.includes('screen')) {
+              pc.removeTrack(sender);
+            }
+          });
+        }
       });
 
       socket.emit('signaling', { roomId, type: 'stream-stopped', data: { streamType: 'camera' } });
