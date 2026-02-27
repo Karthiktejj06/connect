@@ -480,8 +480,9 @@ const Room = () => {
                 <video
                   ref={el => {
                     if (el) {
-                      if (focusedStream) el.srcObject = focusedStream.stream;
-                      else if (mainStream) el.srcObject = mainStream;
+                      if (focusedStream) el.srcObject = focusedStream.stream || null;
+                      else if (mainStream) el.srcObject = mainStream || null;
+                      else el.srcObject = null;
                     }
                   }}
                   autoPlay
@@ -525,7 +526,7 @@ const Room = () => {
                     transition: 'all 0.3s ease'
                   }}
                 >
-                  <video ref={el => { if (el) el.srcObject = localFaceCam.current; }} autoPlay playsInline muted style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  <video ref={el => { if (el) el.srcObject = localFaceCam.current || null; }} autoPlay playsInline muted style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                   <div style={{ position: 'absolute', bottom: '2px', left: '4px', fontSize: '10px', color: 'white', background: 'rgba(0,0,0,0.6)', padding: '2px 6px', borderRadius: '4px', backdropFilter: 'blur(4px)' }}>
                     Me
                   </div>
@@ -553,7 +554,7 @@ const Room = () => {
                   <video
                     autoPlay
                     playsInline
-                    ref={el => { if (el) el.srcObject = data.stream; }}
+                    ref={el => { if (el) el.srcObject = data.stream || null; }}
                     style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                   />
                   <div style={{ position: 'absolute', bottom: '2px', left: '4px', fontSize: '10px', color: 'white', background: 'rgba(0,0,0,0.6)', padding: '2px 6px', borderRadius: '4px', backdropFilter: 'blur(4px)' }}>
