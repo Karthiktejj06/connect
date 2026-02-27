@@ -21,12 +21,26 @@ const io = new Server(server, {
 });
 
 // Middleware
-app.use(cors());
+app.use(cors({
+  origin: true, // Reflects the request origin, allowing any domain while keeping credentials possible
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
 app.use(express.json());
 
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/rooms', roomRoutes);
+
+// Global Error Handler
+app.use((err, req, res, next) => {
+  console.error('Unhandled Error:', err);
+  res.status(500).json({
+    message: 'Internal Server Error',
+    error: process.env.NODE_ENV === 'development' ? err.message : undefined
+  });
+});
 
 const rooms = new Map(); // Track users in each room: roomId -> Map(socket.id -> { username, userId })
 
@@ -38,7 +52,7 @@ io.on('connection', (socket) => {
     socket.join(roomId);
     socket.username = username;
     socket.roomId = roomId;
-    socket.userId = userId; 
+    socket.userId = userId;
 
     if (!rooms.has(roomId)) {
       rooms.set(roomId, new Map());
@@ -46,18 +60,18 @@ io.on('connection', (socket) => {
     rooms.get(roomId).set(socket.id, { username, userId });
 
     console.log(`Server: ${username} (${userId}) joined room: ${roomId}`);
-    
+
     // Broadcast full user objects for reliable host/me labeling
     const userList = Array.from(rooms.get(roomId).values())
       .map(u => ({ username: u.username, _id: u.userId }));
-      
+
     console.log(`Server: Broadcasting user-list for room ${roomId}:`, userList);
     io.to(roomId).emit('user-list', userList);
-    
-    socket.to(roomId).emit('chat-message', { 
-      message: `${username} joined the room`, 
-      username: 'System', 
-      time: new Date().toLocaleTimeString() 
+
+    socket.to(roomId).emit('chat-message', {
+      message: `${username} joined the room`,
+      username: 'System',
+      time: new Date().toLocaleTimeString()
     });
   });
 
@@ -91,10 +105,10 @@ io.on('connection', (socket) => {
     if (socket.roomId && rooms.has(socket.roomId)) {
       rooms.get(socket.roomId).delete(socket.id);
       console.log(`Server: User ${socket.username} disconnected from room ${socket.roomId}`);
-      
+
       const userList = Array.from(rooms.get(socket.roomId).values())
         .map(u => ({ username: u.username, _id: u.userId }));
-        
+
       console.log(`Server: Broadcasting updated user-list for room ${socket.roomId}:`, userList);
       io.to(socket.roomId).emit('user-list', userList);
     }
@@ -104,7 +118,7 @@ io.on('connection', (socket) => {
   socket.on('update-username', ({ roomId, userId, newUsername }) => {
     if (rooms.has(roomId) && rooms.get(roomId).has(socket.id)) {
       console.log(`Server: Updating username for ${userId} to ${newUsername} in room ${roomId}`);
-      
+
       // Update the socket records
       socket.username = newUsername;
       rooms.get(roomId).get(socket.id).username = newUsername;
@@ -114,12 +128,12 @@ io.on('connection', (socket) => {
         .map(u => ({ username: u.username, _id: u.userId }));
 
       io.to(roomId).emit('user-list', userList);
-      
+
       // Add system message about name change
-      io.to(roomId).emit('chat-message', { 
-        message: `System: A user changed their name to ${newUsername}`, 
-        username: 'System', 
-        time: new Date().toLocaleTimeString() 
+      io.to(roomId).emit('chat-message', {
+        message: `System: A user changed their name to ${newUsername}`,
+        username: 'System',
+        time: new Date().toLocaleTimeString()
       });
     }
   });
