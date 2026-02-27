@@ -16,6 +16,22 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // Set up axios interceptor to always use a fresh token
+    const interceptor = axios.interceptors.request.use(
+      async (config) => {
+        try {
+          const token = await getToken();
+          if (token) {
+            config.headers.Authorization = `Bearer ${token}`;
+          }
+        } catch (error) {
+          console.error('Error fetching token:', error);
+        }
+        return config;
+      },
+      (error) => Promise.reject(error)
+    );
+
     const syncUser = async () => {
       if (isLoaded) {
         if (clerkUser) {
@@ -27,17 +43,20 @@ export const AuthProvider = ({ children }) => {
             token: token
           };
           setUser(userData);
-          axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
           localStorage.setItem('user', JSON.stringify(userData));
         } else {
           setUser(null);
-          delete axios.defaults.headers.common['Authorization'];
           localStorage.removeItem('user');
         }
         setLoading(false);
       }
     };
+
     syncUser();
+
+    return () => {
+      axios.interceptors.request.eject(interceptor);
+    };
   }, [clerkUser, isLoaded, getToken]);
 
   const login = () => openSignIn();
