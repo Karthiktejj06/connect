@@ -109,7 +109,7 @@ const Room = () => {
           });
         }
       } catch (err) {
-        console.error(`WebRTC Signaling Error (${type}):`, err);
+        console.error(`WebRTC Signaling Error (${type}) from ${fromUsername}:`, err);
       }
     };
     socket.on('signaling', handleSignaling);
@@ -184,9 +184,17 @@ const Room = () => {
       socket.off('signaling', handleSignaling);
       window.removeEventListener('profile-updated', handleProfileUpdate);
       socket.off('connect', joinRoom);
-      Object.values(peerConnections.current).forEach(pc => pc.close());
     };
-  }, [socket, user.username, roomId, isFaceCamActive, isSharing]);
+  }, [socket, roomId]);
+
+  // Handle PC cleanup only on unmount
+  useEffect(() => {
+    return () => {
+      Object.values(peerConnections.current).forEach(pc => {
+        if (pc.signalingState !== 'closed') pc.close();
+      });
+    };
+  }, []);
 
   const createPeerConnection = (targetSocketId, targetUsername) => {
     if (peerConnections.current[targetSocketId]) return peerConnections.current[targetSocketId];
@@ -207,9 +215,22 @@ const Room = () => {
       }
     };
 
+    pc.oniceconnectionstatechange = () => {
+      console.log(`WebRTC: ICE State with ${targetUsername}: ${pc.iceConnectionState}`);
+    };
+
     pc.ontrack = (event) => {
       const stream = event.streams[0];
-      setRemoteFaceCams(prev => ({ ...prev, [targetSocketId]: { stream, username: targetUsername } }));
+      console.log(`WebRTC: Received track (${event.track.kind}) from ${targetUsername}`);
+
+      setRemoteFaceCams(prev => ({
+        ...prev,
+        [targetSocketId]: {
+          stream,
+          username: targetUsername,
+          lastUpdated: Date.now() // Force UI refresh
+        }
+      }));
 
       // Cleanup if tracks end naturally
       event.track.onended = () => {
@@ -493,14 +514,13 @@ const Room = () => {
                 </div>
                 <video
                   ref={el => {
-                    if (el) {
-                      if (focusedStream) el.srcObject = focusedStream.stream || null;
-                      else if (mainStream) el.srcObject = mainStream || null;
-                      else el.srcObject = null;
+                    if (el && el.srcObject !== (focusedStream?.stream || mainStream || null)) {
+                      el.srcObject = focusedStream ? (focusedStream.stream || null) : (mainStream || null);
                     }
                   }}
                   autoPlay
                   playsInline
+                  onCanPlay={e => e.target.play().catch(err => console.error("Main stream autoplay blocked:", err))}
                   style={{
                     width: '100%',
                     height: 'calc(100% - 44px)',
@@ -568,7 +588,12 @@ const Room = () => {
                   <video
                     autoPlay
                     playsInline
-                    ref={el => { if (el) el.srcObject = data.stream || null; }}
+                    onCanPlay={e => e.target.play().catch(err => console.error("Remote bubble autoplay blocked:", err))}
+                    ref={el => {
+                      if (el && el.srcObject !== (data.stream || null)) {
+                        el.srcObject = data.stream || null;
+                      }
+                    }}
                     style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                   />
                   <div style={{ position: 'absolute', bottom: '2px', left: '4px', fontSize: '10px', color: 'white', background: 'rgba(0,0,0,0.6)', padding: '2px 6px', borderRadius: '4px', backdropFilter: 'blur(4px)' }}>
