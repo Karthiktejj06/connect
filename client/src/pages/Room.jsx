@@ -512,7 +512,7 @@ const Room = () => {
                 <div
                   className="aura-glass"
                   onClick={() => {
-                    setFocusedStream({ username: 'Me', stream: localFaceCam.current });
+                    setFocusedStream({ username: 'Me', socketId: 'Me', stream: localFaceCam.current });
                   }}
                   style={{
                     width: '160px',
@@ -520,7 +520,7 @@ const Room = () => {
                     borderRadius: 'var(--radius-md)',
                     overflow: 'hidden',
                     boxShadow: 'var(--shadow-aura)',
-                    border: focusedStream?.username === 'Me' ? '2px solid var(--aura-primary)' : '2px solid var(--aura-secondary)',
+                    border: focusedStream?.socketId === 'Me' ? '2px solid var(--aura-primary)' : '2px solid var(--aura-secondary)',
                     cursor: 'pointer',
                     transition: 'all 0.3s ease'
                   }}
@@ -531,13 +531,12 @@ const Room = () => {
                   </div>
                 </div>
               )}
-              {Object.entries(remoteFaceCams).map(([uname, stream]) => (
+              {Object.entries(remoteFaceCams).map(([sId, data]) => (
                 <div
-                  key={uname}
+                  key={sId}
                   className="aura-glass"
                   onClick={() => {
-                    setFocusedStream({ username: uname, stream });
-                    // If not already showing a stream, or if clicking a new one, show expansion
+                    setFocusedStream({ username: data.username, socketId: sId, stream: data.stream });
                   }}
                   style={{
                     width: '160px',
@@ -545,7 +544,7 @@ const Room = () => {
                     borderRadius: 'var(--radius-md)',
                     overflow: 'hidden',
                     boxShadow: 'var(--shadow-aura)',
-                    border: focusedStream?.username === uname ? '2px solid var(--aura-primary)' : '1px solid var(--aura-secondary)',
+                    border: focusedStream?.socketId === sId ? '2px solid var(--aura-primary)' : '1px solid var(--aura-secondary)',
                     cursor: 'pointer',
                     transition: 'all 0.3s ease',
                     position: 'relative'
@@ -554,11 +553,11 @@ const Room = () => {
                   <video
                     autoPlay
                     playsInline
-                    ref={el => { if (el) el.srcObject = stream; }}
+                    ref={el => { if (el) el.srcObject = data.stream; }}
                     style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                   />
                   <div style={{ position: 'absolute', bottom: '2px', left: '4px', fontSize: '10px', color: 'white', background: 'rgba(0,0,0,0.6)', padding: '2px 6px', borderRadius: '4px', backdropFilter: 'blur(4px)' }}>
-                    {uname}
+                    {data.username}
                   </div>
                   <div className="expand-hint" style={{
                     position: 'absolute',
