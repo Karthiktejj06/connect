@@ -2,8 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
-import { 
-  Users, Layout, Video, PhoneOff, Mic, MicOff, VideoOff, 
+import {
+  Users, Layout, Video, PhoneOff, Mic, MicOff, VideoOff,
   Monitor, ScreenShareOff, ChevronLeft, ChevronRight, Send, Download,
   Maximize2, Minimize2, Share2, LogOut, X, Moon, Sun, MessageSquare
 } from 'lucide-react';
@@ -21,15 +21,15 @@ const Room = () => {
   const navigate = useNavigate();
   const { theme, toggleTheme } = useTheme();
   const [roomData, setRoomData] = useState(null);
-  
+
   // States for features
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [chatOpen, setChatOpen] = useState(true);
   const [activeTab, setActiveTab] = useState('chat');
-  
+
   // Socket and Collaboration
   const socket = useSocket(roomId, user);
-  
+
   // Media States
   const [screenStream, setScreenStream] = useState(null);
   const [remoteFaceCams, setRemoteFaceCams] = useState({}); // { username: stream }
@@ -45,10 +45,19 @@ const Room = () => {
   const [color, setColor] = useState('#8b5cf6');
   const [size, setSize] = useState(5);
 
-  const peerConnections = useRef({}); // { username: RTCPeerConnection }
+  const peerConnections = useRef({}); // { socketId: RTCPeerConnection }
   const remoteVideosRef = useRef({}); // To manage video elements
   const localStreamRef = useRef(null);
   const localFaceCam = useRef(null);
+
+  // Robust STUN servers for production
+  const iceServers = [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun2.l.google.com:19302' },
+    { urls: 'stun:stun3.l.google.com:19302' },
+    { urls: 'stun:stun4.l.google.com:19302' },
+  ];
 
   useEffect(() => {
     if (!socket) return;
@@ -60,11 +69,12 @@ const Room = () => {
     socket.on('chat-message', handleChatMessage);
 
     // WebRTC Signaling Handler
-    const handleSignaling = async ({ type, from, data }) => {
-      if (from === user.username) return;
+    const handleSignaling = async ({ type, from, fromUsername, data }) => {
+      // 'from' is now the socketId
+      if (from === socket.id) return;
 
       if (type === 'offer') {
-        const pc = createPeerConnection(from);
+        const pc = createPeerConnection(from, fromUsername);
         await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
@@ -73,21 +83,18 @@ const Room = () => {
         const pc = peerConnections.current[from];
         if (pc) await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
       } else if (type === 'candidate' || type === 'ice-candidate') {
-        const pc = createPeerConnection(from);
+        const pc = createPeerConnection(from, fromUsername);
         if (pc) await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
       } else if (type === 'stream-stopped') {
-        const { streamType } = data;
-        
-        // Remove from bubbles (both camera and screen shares use this)
+        // Remove from bubbles
         setRemoteFaceCams(prev => {
           const next = { ...prev };
           delete next[from];
           return next;
         });
-        
-        // Use functional update to ensure we have the latest focusedStream state
+
         setFocusedStream(currentFocused => {
-          if (currentFocused?.username === from) {
+          if (currentFocused?.socketId === from) {
             setIsStreamExpanded(false);
             return null;
           }
@@ -100,11 +107,10 @@ const Room = () => {
     // Sync profile changes to the room in real-time
     const handleProfileUpdate = (e) => {
       const updatedUser = e.detail;
-      console.log('Room: Profile updated, syncing to socket...', updatedUser.username);
-      socket.emit('update-username', { 
-        roomId, 
-        userId: user._id, 
-        newUsername: updatedUser.username 
+      socket.emit('update-username', {
+        roomId,
+        userId: user._id,
+        newUsername: updatedUser.username
       });
     };
     window.addEventListener('profile-updated', handleProfileUpdate);
@@ -112,28 +118,41 @@ const Room = () => {
     const handleUserList = (userList) => {
       console.log('Room: Received user-list:', userList);
       setUsers((prevUsers) => {
-        // Find users who left by comparing IDs
-        const leftUsers = prevUsers.filter(u => u && u._id && !userList.find(nu => nu._id === u._id));
-        
-        console.log('Room: Users who left:', leftUsers);
-        
+        // Find users who left by comparing socket IDs
+        const leftUsers = prevUsers.filter(u => u && u.socketId && !userList.find(nu => nu.socketId === u.socketId));
+
         leftUsers.forEach(u => {
-          if (!u || !u.username) return;
+          if (!u || !u.socketId) return;
           // Cleanup PeerConnection
-          if (peerConnections.current[u.username]) {
-            peerConnections.current[u.username].close();
-            delete peerConnections.current[u.username];
+          if (peerConnections.current[u.socketId]) {
+            peerConnections.current[u.socketId].close();
+            delete peerConnections.current[u.socketId];
           }
           // Cleanup Remote Video
           setRemoteFaceCams(prev => {
             const next = { ...prev };
-            delete next[u.username];
+            delete next[u.socketId];
             return next;
           });
           // Cleanup Focused Stream
-          setFocusedStream(prev => (prev?.username === u.username ? null : prev));
+          setFocusedStream(prev => (prev?.socketId === u.socketId ? null : prev));
         });
-        
+
+        // AUTO-OFFER: If I am currently sharing and new users joined, send offers to them
+        const newUsers = userList.filter(nu => nu.socketId !== socket.id && !prevUsers.find(pu => pu.socketId === nu.socketId));
+        if (newUsers.length > 0 && (isFaceCamActive || isSharing)) {
+          newUsers.forEach(nu => {
+            console.log(`Room: Automatically sending offer to new joiner: ${nu.username} (${nu.socketId})`);
+            const pc = createPeerConnection(nu.socketId, nu.username);
+
+            // Re-negotiate
+            pc.createOffer().then(offer => {
+              pc.setLocalDescription(offer);
+              socket.emit('signaling', { roomId, to: nu.socketId, type: 'offer', data: { offer } });
+            });
+          });
+        }
+
         return userList;
       });
     };
@@ -141,7 +160,6 @@ const Room = () => {
 
     // NOW join the room - all listeners are ready
     const joinRoom = () => {
-      console.log('Room: Emitting join-room', { roomId, username: user.username, userId: user._id });
       socket.emit('join-room', { roomId, username: user.username, userId: user._id });
     };
     if (socket.connected) {
@@ -158,14 +176,12 @@ const Room = () => {
       socket.off('connect', joinRoom);
       Object.values(peerConnections.current).forEach(pc => pc.close());
     };
-  }, [socket, user.username, roomId]);
+  }, [socket, user.username, roomId, isFaceCamActive, isSharing]);
 
-  const createPeerConnection = (targetUser) => {
-    if (peerConnections.current[targetUser]) return peerConnections.current[targetUser];
+  const createPeerConnection = (targetSocketId, targetUsername) => {
+    if (peerConnections.current[targetSocketId]) return peerConnections.current[targetSocketId];
 
-    const pc = new RTCPeerConnection({
-      iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
-    });
+    const pc = new RTCPeerConnection({ iceServers });
 
     // Add local tracks to the connection immediately if active
     if (isFaceCamActive && localFaceCam.current) {
@@ -177,40 +193,47 @@ const Room = () => {
 
     pc.onicecandidate = (event) => {
       if (event.candidate) {
-        socket.emit('signaling', { roomId, to: targetUser, type: 'candidate', data: { candidate: event.candidate } });
+        socket.emit('signaling', { roomId, to: targetSocketId, type: 'candidate', data: { candidate: event.candidate } });
       }
     };
 
     pc.ontrack = (event) => {
       const stream = event.streams[0];
-      setRemoteFaceCams(prev => ({ ...prev, [targetUser]: stream }));
+      setRemoteFaceCams(prev => ({ ...prev, [targetSocketId]: { stream, username: targetUsername } }));
 
       // Cleanup if tracks end naturally
       event.track.onended = () => {
         setRemoteFaceCams(prev => {
           const next = { ...prev };
-          delete next[targetUser];
+          delete next[targetSocketId];
           return next;
         });
       };
     };
 
-    peerConnections.current[targetUser] = pc;
+    peerConnections.current[targetSocketId] = pc;
     return pc;
   };
-
-
 
   const toggleScreenShare = async () => {
     if (isSharing) {
       localStreamRef.current?.getTracks().forEach(track => track.stop());
       setIsSharing(false);
       setMainStream(null);
-      if (focusedStream?.username === 'Me' || !focusedStream) {
+      if (focusedStream?.socketId === 'Me' || !focusedStream) {
         setFocusedStream(null);
         setIsStreamExpanded(false);
       }
-      // Notify others
+
+      // Stop tracks on all PCs
+      Object.values(peerConnections.current).forEach(pc => {
+        pc.getSenders().forEach(sender => {
+          if (sender.track && sender.track.label.includes('screen')) {
+            pc.removeTrack(sender);
+          }
+        });
+      });
+
       socket.emit('signaling', { roomId, type: 'stream-stopped', data: { streamType: 'screen' } });
       return;
     }
@@ -221,14 +244,14 @@ const Room = () => {
       setIsSharing(true);
       setMainStream(stream);
 
-      // Simple implementation: Send to everyone
-      users.forEach(({ username }) => {
-        if (username !== user.username) {
-          const pc = createPeerConnection(username);
+      // Send to everyone using socketId
+      users.forEach((u) => {
+        if (u.socketId !== socket.id) {
+          const pc = createPeerConnection(u.socketId, u.username);
           stream.getTracks().forEach(track => pc.addTrack(track, stream));
           pc.createOffer().then(offer => {
             pc.setLocalDescription(offer);
-            socket.emit('signaling', { roomId, to: username, type: 'offer', data: { offer } });
+            socket.emit('signaling', { roomId, to: u.socketId, type: 'offer', data: { offer } });
           });
         }
       });
@@ -236,7 +259,7 @@ const Room = () => {
       stream.getVideoTracks()[0].onended = () => {
         setIsSharing(false);
         setMainStream(null);
-        setFocusedStream(current => current?.username === 'Me' ? null : current);
+        setFocusedStream(current => current?.socketId === 'Me' ? null : current);
         setIsStreamExpanded(false);
         socket.emit('signaling', { roomId, type: 'stream-stopped', data: { streamType: 'screen' } });
       };
@@ -249,11 +272,20 @@ const Room = () => {
     if (isFaceCamActive) {
       localFaceCam.current?.getTracks().forEach(track => track.stop());
       setIsFaceCamActive(false);
-      if (focusedStream?.username === 'Me') {
+      if (focusedStream?.socketId === 'Me') {
         setFocusedStream(null);
         setIsStreamExpanded(false);
       }
-      // Notify others
+
+      // Stop tracks on all PCs
+      Object.values(peerConnections.current).forEach(pc => {
+        pc.getSenders().forEach(sender => {
+          if (sender.track && !sender.track.label.includes('screen')) {
+            pc.removeTrack(sender);
+          }
+        });
+      });
+
       socket.emit('signaling', { roomId, type: 'stream-stopped', data: { streamType: 'camera' } });
       return;
     }
@@ -263,14 +295,14 @@ const Room = () => {
       localFaceCam.current = stream;
       setIsFaceCamActive(true);
 
-      // Broadcast to others
-      users.forEach(({ username }) => {
-        if (username !== user.username) {
-          const pc = createPeerConnection(username);
+      // Broadcast to others using socketId
+      users.forEach((u) => {
+        if (u.socketId !== socket.id) {
+          const pc = createPeerConnection(u.socketId, u.username);
           stream.getTracks().forEach(track => pc.addTrack(track, stream));
           pc.createOffer().then(offer => {
             pc.setLocalDescription(offer);
-            socket.emit('signaling', { roomId, to: username, type: 'offer', data: { offer } });
+            socket.emit('signaling', { roomId, to: u.socketId, type: 'offer', data: { offer } });
           });
         }
       });
@@ -284,19 +316,19 @@ const Room = () => {
       try {
         const { data } = await axios.get(`${API_URL}/rooms/${roomId}`);
         setRoomData(data);
-        
+
         // Save to Recent Sessions
         const recent = JSON.parse(localStorage.getItem('aura_recent_sessions') || '[]');
         const newSession = { roomId, name: data.name, timestamp: new Date().getTime() };
-        
+
         // Filter out duplicates and keep latest 5
         const updatedRecent = [
           newSession,
           ...recent.filter(s => s.roomId !== roomId)
         ].slice(0, 5);
-        
+
         localStorage.setItem('aura_recent_sessions', JSON.stringify(updatedRecent));
-        
+
       } catch (err) {
         toast.error(err.response?.data?.message || 'Session not found');
         navigate('/');
@@ -331,7 +363,7 @@ const Room = () => {
             <span style={{ fontWeight: '800', fontSize: '1rem', letterSpacing: '-0.02em' }}>{roomData.name}</span>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
               <span className="aura-badge">{roomId}</span>
-              <button 
+              <button
                 onClick={() => {
                   navigator.clipboard.writeText(roomId);
                   toast.success('Room ID copied!');
@@ -354,12 +386,12 @@ const Room = () => {
           <button onClick={handleShare} className="btn-aura btn-aura-secondary" style={{ padding: '0.5rem 1rem', fontSize: '0.75rem' }}>
             <Share2 size={16} /> <span className="mobile-hide">Share</span>
           </button>
-          <button onClick={handleLeave} className="btn-aura" style={{ 
-            padding: '0.5rem 1rem', 
-            fontSize: '0.75rem', 
-            background: 'rgba(239, 68, 68, 0.05)', 
+          <button onClick={handleLeave} className="btn-aura" style={{
+            padding: '0.5rem 1rem',
+            fontSize: '0.75rem',
+            background: 'rgba(239, 68, 68, 0.05)',
             color: '#ef4444',
-            border: '1px solid rgba(239, 68, 68, 0.1)' 
+            border: '1px solid rgba(239, 68, 68, 0.1)'
           }}>
             <LogOut size={16} /> <span className="mobile-hide">Leave</span>
           </button>
@@ -390,10 +422,10 @@ const Room = () => {
 
         {/* Main Workspace */}
         <main style={{ position: 'relative', background: 'var(--aura-bg)' }} className="room-main">
-          <div className="aura-card" style={{ 
-            width: '100%', 
-            height: '100%', 
-            padding: 0, 
+          <div className="aura-card" style={{
+            width: '100%',
+            height: '100%',
+            padding: 0,
             overflow: 'hidden',
             position: 'relative',
             background: 'var(--aura-card)',
@@ -403,14 +435,14 @@ const Room = () => {
 
             {/* Dynamic Stream Panel (Focused Essence) */}
             {(mainStream || focusedStream) && (
-              <div className="aura-glass stream-overlay" style={{ 
-                position: 'absolute', 
-                top: isStreamExpanded ? '50%' : '1.5rem', 
-                right: isStreamExpanded ? '50%' : '1.5rem', 
+              <div className="aura-glass stream-overlay" style={{
+                position: 'absolute',
+                top: isStreamExpanded ? '50%' : '1.5rem',
+                right: isStreamExpanded ? '50%' : '1.5rem',
                 transform: isStreamExpanded ? 'translate(50%, -50%)' : 'none',
-                width: isStreamExpanded ? '95%' : '380px', 
+                width: isStreamExpanded ? '95%' : '380px',
                 height: isStreamExpanded ? '90%' : 'auto',
-                borderRadius: 'var(--radius-lg)', 
+                borderRadius: 'var(--radius-lg)',
                 overflow: 'hidden',
                 boxShadow: 'var(--shadow-aura)',
                 border: '1px solid var(--aura-primary)',
@@ -426,68 +458,68 @@ const Room = () => {
                     </span>
                   </div>
                   <div style={{ display: 'flex', gap: '0.8rem' }}>
-                    <button 
-                      onClick={() => setIsStreamExpanded(!isStreamExpanded)} 
+                    <button
+                      onClick={() => setIsStreamExpanded(!isStreamExpanded)}
                       style={{ background: 'transparent', border: 'none', color: 'white', cursor: 'pointer', padding: '0.2rem', display: 'flex' }}
                       title={isStreamExpanded ? "Minimize" : "Maximize"}
                     >
                       {isStreamExpanded ? <Minimize2 size={20} /> : <Maximize2 size={20} />}
                     </button>
-                    <button 
+                    <button
                       onClick={() => {
                         setMainStream(null);
                         setFocusedStream(null);
                         setIsStreamExpanded(false);
-                      }} 
+                      }}
                       style={{ background: 'transparent', border: 'none', color: 'white', cursor: 'pointer', padding: '0.2rem', display: 'flex' }}
                     >
                       <X size={20} />
                     </button>
                   </div>
                 </div>
-                <video 
+                <video
                   ref={el => {
                     if (el) {
                       if (focusedStream) el.srcObject = focusedStream.stream;
                       else if (mainStream) el.srcObject = mainStream;
                     }
-                  }} 
-                  autoPlay 
-                  playsInline 
-                  style={{ 
-                    width: '100%', 
-                    height: 'calc(100% - 44px)', 
-                    display: 'block', 
-                    objectFit: isStreamExpanded ? 'contain' : 'cover', 
-                    background: '#000' 
-                  }} 
+                  }}
+                  autoPlay
+                  playsInline
+                  style={{
+                    width: '100%',
+                    height: 'calc(100% - 44px)',
+                    display: 'block',
+                    objectFit: isStreamExpanded ? 'contain' : 'cover',
+                    background: '#000'
+                  }}
                 />
               </div>
             )}
 
             {/* Local/Remote Face Cam Bubbles */}
-            <div style={{ 
-              position: 'absolute', 
-              bottom: '1.5rem', 
-              right: '1.5rem', 
-              display: 'flex', 
-              flexDirection: 'column', 
+            <div style={{
+              position: 'absolute',
+              bottom: '1.5rem',
+              right: '1.5rem',
+              display: 'flex',
+              flexDirection: 'column',
               gap: '1rem',
               alignItems: 'flex-end',
               zIndex: 210
             }}>
               {isFaceCamActive && (
-                <div 
-                  className="aura-glass" 
+                <div
+                  className="aura-glass"
                   onClick={() => {
                     setFocusedStream({ username: 'Me', stream: localFaceCam.current });
                   }}
-                  style={{ 
-                    width: '160px', 
-                    aspectRatio: '16/9', 
-                    borderRadius: 'var(--radius-md)', 
-                    overflow: 'hidden', 
-                    boxShadow: 'var(--shadow-aura)', 
+                  style={{
+                    width: '160px',
+                    aspectRatio: '16/9',
+                    borderRadius: 'var(--radius-md)',
+                    overflow: 'hidden',
+                    boxShadow: 'var(--shadow-aura)',
                     border: focusedStream?.username === 'Me' ? '2px solid var(--aura-primary)' : '2px solid var(--aura-secondary)',
                     cursor: 'pointer',
                     transition: 'all 0.3s ease'
@@ -500,38 +532,38 @@ const Room = () => {
                 </div>
               )}
               {Object.entries(remoteFaceCams).map(([uname, stream]) => (
-                <div 
-                  key={uname} 
-                  className="aura-glass" 
+                <div
+                  key={uname}
+                  className="aura-glass"
                   onClick={() => {
                     setFocusedStream({ username: uname, stream });
                     // If not already showing a stream, or if clicking a new one, show expansion
                   }}
-                  style={{ 
-                    width: '160px', 
-                    aspectRatio: '16/9', 
-                    borderRadius: 'var(--radius-md)', 
-                    overflow: 'hidden', 
-                    boxShadow: 'var(--shadow-aura)', 
+                  style={{
+                    width: '160px',
+                    aspectRatio: '16/9',
+                    borderRadius: 'var(--radius-md)',
+                    overflow: 'hidden',
+                    boxShadow: 'var(--shadow-aura)',
                     border: focusedStream?.username === uname ? '2px solid var(--aura-primary)' : '1px solid var(--aura-secondary)',
                     cursor: 'pointer',
                     transition: 'all 0.3s ease',
                     position: 'relative'
                   }}
                 >
-                  <video 
-                    autoPlay 
-                    playsInline 
+                  <video
+                    autoPlay
+                    playsInline
                     ref={el => { if (el) el.srcObject = stream; }}
-                    style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                   />
                   <div style={{ position: 'absolute', bottom: '2px', left: '4px', fontSize: '10px', color: 'white', background: 'rgba(0,0,0,0.6)', padding: '2px 6px', borderRadius: '4px', backdropFilter: 'blur(4px)' }}>
                     {uname}
                   </div>
-                  <div className="expand-hint" style={{ 
-                    position: 'absolute', 
-                    top: '50%', 
-                    left: '50%', 
+                  <div className="expand-hint" style={{
+                    position: 'absolute',
+                    top: '50%',
+                    left: '50%',
                     transform: 'translate(-50%, -50%)',
                     background: 'rgba(139, 92, 246, 0.8)',
                     padding: '4px',
@@ -581,26 +613,26 @@ const Room = () => {
                 <h4 style={{ fontSize: '0.75rem', fontWeight: '900', color: 'var(--aura-text-muted)', marginBottom: '1.5rem', textTransform: 'uppercase', letterSpacing: '0.1em' }}>In this Session</h4>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                   {users && users.length > 0 ? users.map((u, i) => {
-                      if (!u || !u.username) return null;
-                      const isMe = u._id === user._id;
-                      const isHost = u._id === roomData.host?._id;
-                      
-                      return (
-                        <div key={u._id || i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }} className="animate-fade-in">
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                            <div style={{ width: '36px', height: '36px', borderRadius: '12px', background: 'linear-gradient(135deg, var(--aura-primary), var(--aura-accent))', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.9rem', fontWeight: '900', boxShadow: 'var(--shadow-soft)' }}>
-                              {u.username[0].toUpperCase()}
-                            </div>
-                            <div style={{ display: 'flex', flexDirection: 'column' }}>
-                              <span style={{ fontSize: '0.95rem', fontWeight: '600' }}>
-                                {u.username} 
-                                {isMe && <span style={{ color: 'var(--aura-primary)', fontSize: '0.75rem', marginLeft: '0.4rem' }}>(Me)</span>}
-                                {isHost && <span style={{ color: 'var(--aura-secondary)', fontSize: '0.75rem', marginLeft: '0.4rem' }}>(Host)</span>}
-                              </span>
-                            </div>
+                    if (!u || !u.username) return null;
+                    const isMe = u._id === user._id;
+                    const isHost = u._id === roomData.host?._id;
+
+                    return (
+                      <div key={u._id || i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }} className="animate-fade-in">
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                          <div style={{ width: '36px', height: '36px', borderRadius: '12px', background: 'linear-gradient(135deg, var(--aura-primary), var(--aura-accent))', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.9rem', fontWeight: '900', boxShadow: 'var(--shadow-soft)' }}>
+                            {u.username[0].toUpperCase()}
+                          </div>
+                          <div style={{ display: 'flex', flexDirection: 'column' }}>
+                            <span style={{ fontSize: '0.95rem', fontWeight: '600' }}>
+                              {u.username}
+                              {isMe && <span style={{ color: 'var(--aura-primary)', fontSize: '0.75rem', marginLeft: '0.4rem' }}>(Me)</span>}
+                              {isHost && <span style={{ color: 'var(--aura-secondary)', fontSize: '0.75rem', marginLeft: '0.4rem' }}>(Host)</span>}
+                            </span>
                           </div>
                         </div>
-                      );
+                      </div>
+                    );
                   }) : (
                     <div style={{ textAlign: 'center', py: '2rem', color: 'var(--aura-text-muted)', fontSize: '0.85rem' }}>
                       No other users in this session.

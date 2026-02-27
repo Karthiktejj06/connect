@@ -62,8 +62,12 @@ io.on('connection', (socket) => {
     console.log(`Server: ${username} (${userId}) joined room: ${roomId}`);
 
     // Broadcast full user objects for reliable host/me labeling
-    const userList = Array.from(rooms.get(roomId).values())
-      .map(u => ({ username: u.username, _id: u.userId }));
+    const userList = Array.from(rooms.get(roomId).entries())
+      .map(([socketId, u]) => ({
+        username: u.username,
+        _id: u.userId,
+        socketId: socketId
+      }));
 
     console.log(`Server: Broadcasting user-list for room ${roomId}:`, userList);
     io.to(roomId).emit('user-list', userList);
@@ -82,14 +86,11 @@ io.on('connection', (socket) => {
   // WebRTC Signaling Generic Handler
   socket.on('signaling', ({ roomId, to, type, data }) => {
     if (to) {
-      // Targeted signaling
-      const targetSocket = Array.from(io.sockets.sockets.values()).find(s => s.username === to && s.roomId === roomId);
-      if (targetSocket) {
-        targetSocket.emit('signaling', { type, data, from: socket.username });
-      }
+      // Targeted signaling using socket ID
+      io.to(to).emit('signaling', { type, data, from: socket.id, fromUsername: socket.username });
     } else {
       // Broadcast signaling (legacy fallback)
-      socket.to(roomId).emit('signaling', { type, data, from: socket.username });
+      socket.to(roomId).emit('signaling', { type, data, from: socket.id, fromUsername: socket.username });
     }
   });
 
