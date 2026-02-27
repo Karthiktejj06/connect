@@ -49,6 +49,7 @@ const Room = () => {
   const remoteVideosRef = useRef({}); // To manage video elements
   const localStreamRef = useRef(null);
   const localFaceCam = useRef(null);
+  const pendingCandidates = useRef({}); // { socketId: [candidates] }
 
   // Robust STUN servers for production
   const iceServers = [
@@ -79,6 +80,13 @@ const Room = () => {
           if (pc.signalingState === 'closed') return;
 
           await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
+
+          // Process queued candidates
+          if (pendingCandidates.current[from]) {
+            pendingCandidates.current[from].forEach(cand => pc.addIceCandidate(new RTCIceCandidate(cand)).catch(e => { }));
+            delete pendingCandidates.current[from];
+          }
+
           const answer = await pc.createAnswer();
           await pc.setLocalDescription(answer);
           socket.emit('signaling', { roomId, to: from, type: 'answer', data: { answer } });
@@ -86,11 +94,19 @@ const Room = () => {
           const pc = peerConnections.current[from];
           if (pc && pc.signalingState !== 'closed') {
             await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
+            // Process queued candidates
+            if (pendingCandidates.current[from]) {
+              pendingCandidates.current[from].forEach(cand => pc.addIceCandidate(new RTCIceCandidate(cand)).catch(e => { }));
+              delete pendingCandidates.current[from];
+            }
           }
         } else if (type === 'candidate' || type === 'ice-candidate') {
           const pc = createPeerConnection(from, fromUsername);
-          if (pc && pc.signalingState !== 'closed') {
+          if (pc && pc.remoteDescription && pc.signalingState !== 'closed') {
             await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+          } else {
+            if (!pendingCandidates.current[from]) pendingCandidates.current[from] = [];
+            pendingCandidates.current[from].push(data.candidate);
           }
         } else if (type === 'stream-stopped') {
           // Remove from bubbles
@@ -217,20 +233,44 @@ const Room = () => {
 
     pc.oniceconnectionstatechange = () => {
       console.log(`WebRTC: ICE State with ${targetUsername}: ${pc.iceConnectionState}`);
+      if (pc.iceConnectionState === 'failed') {
+        pc.restartIce();
+      }
+    };
+
+    pc.onnegotiationneeded = async () => {
+      try {
+        if (pc.signalingState !== 'closed') {
+          const offer = await pc.createOffer();
+          await pc.setLocalDescription(offer);
+          socket.emit('signaling', { roomId, to: targetSocketId, type: 'offer', data: { offer } });
+        }
+      } catch (err) {
+        console.error("Negotiation error:", err);
+      }
     };
 
     pc.ontrack = (event) => {
       const stream = event.streams[0];
       console.log(`WebRTC: Received track (${event.track.kind}) from ${targetUsername}. Stream active: ${stream?.active}`);
 
-      setRemoteFaceCams(prev => ({
-        ...prev,
-        [targetSocketId]: {
-          stream,
-          username: targetUsername,
-          lastUpdated: Date.now()
-        }
-      }));
+      const updateUI = () => {
+        setRemoteFaceCams(prev => ({
+          ...prev,
+          [targetSocketId]: {
+            stream: stream,
+            username: targetUsername,
+            lastUpdated: Date.now()
+          }
+        }));
+      };
+
+      updateUI();
+
+      event.track.onunmute = () => {
+        console.log(`WebRTC: Track (${event.track.kind}) from ${targetUsername} unmuted.`);
+        updateUI();
+      };
 
       // Only remove if explicitly signaled or if stream is dead
       event.track.onended = () => {
