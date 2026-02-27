@@ -44,6 +44,7 @@ const Room = () => {
   const [tool, setTool] = useState('pencil');
   const [color, setColor] = useState('#8b5cf6');
   const [size, setSize] = useState(5);
+  const [peerStates, setPeerStates] = useState({}); // { socketId: { ice: '...', signaling: '...' } }
 
   const peerConnections = useRef({}); // { socketId: RTCPeerConnection }
   const remoteVideosRef = useRef({}); // To manage video elements
@@ -60,6 +61,8 @@ const Room = () => {
     { urls: 'stun:stun2.l.google.com:19302' },
     { urls: 'stun:stun3.l.google.com:19302' },
     { urls: 'stun:stun4.l.google.com:19302' },
+    { urls: 'stun:stun.services.mozilla.com' },
+    { urls: 'stun:global.stun.twilio.com:3478?transport=udp' },
   ];
 
   useEffect(() => {
@@ -250,12 +253,22 @@ const Room = () => {
 
     pc.oniceconnectionstatechange = () => {
       console.log(`WebRTC: ICE State with ${targetUsername}: ${pc.iceConnectionState}`);
+      setPeerStates(prev => ({
+        ...prev,
+        [targetSocketId]: { ...prev[targetSocketId], ice: pc.iceConnectionState }
+      }));
       if (pc.iceConnectionState === 'failed') {
+        console.warn(`WebRTC: Connection failed with ${targetUsername}, attempting ICE restart...`);
         pc.restartIce();
       }
     };
 
     pc.onsignalingstatechange = () => {
+      console.log(`WebRTC: Signaling State with ${targetUsername}: ${pc.signalingState}`);
+      setPeerStates(prev => ({
+        ...prev,
+        [targetSocketId]: { ...prev[targetSocketId], signaling: pc.signalingState }
+      }));
       if (pc.signalingState === 'stable') {
         makingOffer.current[targetSocketId] = false;
       }
@@ -446,19 +459,16 @@ const Room = () => {
   };
 
   const reSyncWebRTC = () => {
-    console.log("WebRTC: Manually re-syncing all connections...");
-    users.forEach(u => {
-      if (u.socketId !== socket.id) {
-        const pc = createPeerConnection(u.socketId, u.username);
-        if (pc.signalingState !== 'closed') {
-          pc.createOffer().then(offer => {
-            pc.setLocalDescription(offer);
-            socket.emit('signaling', { roomId, to: u.socketId, type: 'offer', data: { offer } });
-            toast.success(`Broadcasting update to ${u.username}`);
-          }).catch(err => console.error(`Error re-syncing ${u.username}:`, err));
-        }
+    console.log("WebRTC: Manually re-syncing all connections with ICE restart...");
+    Object.entries(peerConnections.current).forEach(([sId, pc]) => {
+      if (pc.signalingState !== 'closed') {
+        const targetUser = users.find(u => u.socketId === sId);
+        console.log(`WebRTC: Restarting ICE for ${targetUser?.username || sId}`);
+        pc.restartIce();
+        // createOffer will trigger negotiationneeded which sends the offer with iceRestart: true
       }
     });
+    toast.info("Attempting WebRTC re-sync...");
   };
 
 
@@ -685,8 +695,16 @@ const Room = () => {
                     }}
                     style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                   />
-                  <div style={{ position: 'absolute', bottom: '2px', left: '4px', fontSize: '10px', color: 'white', background: 'rgba(0,0,0,0.6)', padding: '2px 6px', borderRadius: '4px', backdropFilter: 'blur(4px)' }}>
-                    {data.username}
+                  <div style={{ position: 'absolute', bottom: '2px', left: '4px', fontSize: '10px', color: 'white', background: 'rgba(0,0,0,0.6)', padding: '2px 6px', borderRadius: '4px', backdropFilter: 'blur(4px)', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: peerStates[sId]?.ice === 'connected' || peerStates[sId]?.ice === 'completed' ? '#10b981' : '#f59e0b' }} />
+                      {data.username}
+                    </div>
+                    {peerStates[sId] && (
+                      <div style={{ fontSize: '8px', opacity: 0.8 }}>
+                        ICE: {peerStates[sId].ice || 'new'} | SIG: {peerStates[sId].signaling || 'stable'}
+                      </div>
+                    )}
                   </div>
                   <div className="expand-hint" style={{
                     position: 'absolute',
