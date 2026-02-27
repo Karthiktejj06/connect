@@ -70,36 +70,46 @@ const Room = () => {
 
     // WebRTC Signaling Handler
     const handleSignaling = async ({ type, from, fromUsername, data }) => {
-      // 'from' is now the socketId
-      if (from === socket.id) return;
+      try {
+        // 'from' is now the socketId
+        if (from === socket.id) return;
 
-      if (type === 'offer') {
-        const pc = createPeerConnection(from, fromUsername);
-        await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
-        const answer = await pc.createAnswer();
-        await pc.setLocalDescription(answer);
-        socket.emit('signaling', { roomId, to: from, type: 'answer', data: { answer } });
-      } else if (type === 'answer') {
-        const pc = peerConnections.current[from];
-        if (pc) await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
-      } else if (type === 'candidate' || type === 'ice-candidate') {
-        const pc = createPeerConnection(from, fromUsername);
-        if (pc) await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
-      } else if (type === 'stream-stopped') {
-        // Remove from bubbles
-        setRemoteFaceCams(prev => {
-          const next = { ...prev };
-          delete next[from];
-          return next;
-        });
+        if (type === 'offer') {
+          const pc = createPeerConnection(from, fromUsername);
+          if (pc.signalingState === 'closed') return;
 
-        setFocusedStream(currentFocused => {
-          if (currentFocused?.socketId === from) {
-            setIsStreamExpanded(false);
-            return null;
+          await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
+          const answer = await pc.createAnswer();
+          await pc.setLocalDescription(answer);
+          socket.emit('signaling', { roomId, to: from, type: 'answer', data: { answer } });
+        } else if (type === 'answer') {
+          const pc = peerConnections.current[from];
+          if (pc && pc.signalingState !== 'closed') {
+            await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
           }
-          return currentFocused;
-        });
+        } else if (type === 'candidate' || type === 'ice-candidate') {
+          const pc = createPeerConnection(from, fromUsername);
+          if (pc && pc.signalingState !== 'closed') {
+            await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+          }
+        } else if (type === 'stream-stopped') {
+          // Remove from bubbles
+          setRemoteFaceCams(prev => {
+            const next = { ...prev };
+            delete next[from];
+            return next;
+          });
+
+          setFocusedStream(currentFocused => {
+            if (currentFocused?.socketId === from) {
+              setIsStreamExpanded(false);
+              return null;
+            }
+            return currentFocused;
+          });
+        }
+      } catch (err) {
+        console.error(`WebRTC Signaling Error (${type}):`, err);
       }
     };
     socket.on('signaling', handleSignaling);
