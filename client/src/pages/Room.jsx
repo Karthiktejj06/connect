@@ -50,6 +50,8 @@ const Room = () => {
   const localStreamRef = useRef(null);
   const localFaceCam = useRef(null);
   const pendingCandidates = useRef({}); // { socketId: [candidates] }
+  const makingOffer = useRef({}); // { socketId: boolean }
+  const ignoreOffer = useRef({}); // { socketId: boolean }
 
   // Robust STUN servers for production
   const iceServers = [
@@ -77,6 +79,15 @@ const Room = () => {
 
         if (type === 'offer') {
           const pc = createPeerConnection(from, fromUsername);
+          const isPolite = socket.id.localeCompare(from) > 0;
+          const offerCollision = (makingOffer.current[from] || pc.signalingState !== 'stable');
+
+          ignoreOffer.current[from] = !isPolite && offerCollision;
+          if (ignoreOffer.current[from]) {
+            console.log(`WebRTC: Ignoring offer collision (impolite peer) from ${fromUsername}`);
+            return;
+          }
+
           if (pc.signalingState === 'closed') return;
 
           await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
@@ -102,11 +113,17 @@ const Room = () => {
           }
         } else if (type === 'candidate' || type === 'ice-candidate') {
           const pc = createPeerConnection(from, fromUsername);
-          if (pc && pc.remoteDescription && pc.signalingState !== 'closed') {
-            await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
-          } else {
-            if (!pendingCandidates.current[from]) pendingCandidates.current[from] = [];
-            pendingCandidates.current[from].push(data.candidate);
+          try {
+            if (pc && pc.remoteDescription && pc.signalingState !== 'closed') {
+              await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+            } else {
+              if (!pendingCandidates.current[from]) pendingCandidates.current[from] = [];
+              pendingCandidates.current[from].push(data.candidate);
+            }
+          } catch (err) {
+            if (!ignoreOffer.current[from]) {
+              console.error(`WebRTC: Error adding candidate from ${fromUsername}:`, err);
+            }
           }
         } else if (type === 'stream-stopped') {
           // Remove from bubbles
@@ -238,8 +255,15 @@ const Room = () => {
       }
     };
 
+    pc.onsignalingstatechange = () => {
+      if (pc.signalingState === 'stable') {
+        makingOffer.current[targetSocketId] = false;
+      }
+    };
+
     pc.onnegotiationneeded = async () => {
       try {
+        makingOffer.current[targetSocketId] = true;
         if (pc.signalingState !== 'closed') {
           const offer = await pc.createOffer();
           await pc.setLocalDescription(offer);
@@ -247,6 +271,8 @@ const Room = () => {
         }
       } catch (err) {
         console.error("Negotiation error:", err);
+      } finally {
+        makingOffer.current[targetSocketId] = false;
       }
     };
 
