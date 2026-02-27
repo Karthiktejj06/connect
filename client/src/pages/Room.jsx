@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import {
   Users, Layout, Video, PhoneOff, Mic, MicOff, VideoOff,
   Monitor, ScreenShareOff, ChevronLeft, ChevronRight, Send, Download,
-  Maximize2, Minimize2, Share2, LogOut, X, Moon, Sun, MessageSquare
+  Maximize2, Minimize2, Share2, LogOut, X, Moon, Sun, MessageSquare, RefreshCw
 } from 'lucide-react';
 import useSocket from '../hooks/useSocket';
 import Whiteboard from '../components/Whiteboard';
@@ -221,24 +221,20 @@ const Room = () => {
 
     pc.ontrack = (event) => {
       const stream = event.streams[0];
-      console.log(`WebRTC: Received track (${event.track.kind}) from ${targetUsername}`);
+      console.log(`WebRTC: Received track (${event.track.kind}) from ${targetUsername}. Stream active: ${stream?.active}`);
 
       setRemoteFaceCams(prev => ({
         ...prev,
         [targetSocketId]: {
           stream,
           username: targetUsername,
-          lastUpdated: Date.now() // Force UI refresh
+          lastUpdated: Date.now()
         }
       }));
 
-      // Cleanup if tracks end naturally
+      // Only remove if explicitly signaled or if stream is dead
       event.track.onended = () => {
-        setRemoteFaceCams(prev => {
-          const next = { ...prev };
-          delete next[targetSocketId];
-          return next;
-        });
+        console.log(`WebRTC: Track (${event.track.kind}) from ${targetUsername} ended.`);
       };
     };
 
@@ -383,6 +379,22 @@ const Room = () => {
     toast.success('Session link copied!');
   };
 
+  const reSyncWebRTC = () => {
+    console.log("WebRTC: Manually re-syncing all connections...");
+    users.forEach(u => {
+      if (u.socketId !== socket.id) {
+        const pc = createPeerConnection(u.socketId, u.username);
+        if (pc.signalingState !== 'closed') {
+          pc.createOffer().then(offer => {
+            pc.setLocalDescription(offer);
+            socket.emit('signaling', { roomId, to: u.socketId, type: 'offer', data: { offer } });
+            toast.success(`Broadcasting update to ${u.username}`);
+          }).catch(err => console.error(`Error re-syncing ${u.username}:`, err));
+        }
+      }
+    });
+  };
+
 
 
   if (!roomData) return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: 'var(--aura-bg)', color: 'var(--aura-text)' }}>Connecting...</div>;
@@ -418,6 +430,9 @@ const Room = () => {
             <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#10b981', boxShadow: '0 0 10px #10b981' }} />
             <span>{users.length} Online</span>
           </div>
+          <button onClick={reSyncWebRTC} className="btn-aura btn-aura-secondary" style={{ padding: '0.5rem 1rem', fontSize: '0.75rem' }} title="Re-sync video/screen share">
+            <RefreshCw size={16} /> <span className="mobile-hide">Re-sync</span>
+          </button>
           <button onClick={handleShare} className="btn-aura btn-aura-secondary" style={{ padding: '0.5rem 1rem', fontSize: '0.75rem' }}>
             <Share2 size={16} /> <span className="mobile-hide">Share</span>
           </button>
@@ -520,7 +535,11 @@ const Room = () => {
                   }}
                   autoPlay
                   playsInline
-                  onCanPlay={e => e.target.play().catch(err => console.error("Main stream autoplay blocked:", err))}
+                  muted // Crucial for autoplay stability
+                  onCanPlay={e => {
+                    console.log("WebRTC: Main video can play");
+                    e.target.play().catch(err => console.error("Main stream autoplay blocked:", err));
+                  }}
                   style={{
                     width: '100%',
                     height: 'calc(100% - 44px)',
@@ -588,7 +607,11 @@ const Room = () => {
                   <video
                     autoPlay
                     playsInline
-                    onCanPlay={e => e.target.play().catch(err => console.error("Remote bubble autoplay blocked:", err))}
+                    muted // Crucial for autoplay stability
+                    onCanPlay={e => {
+                      console.log(`WebRTC: Remote bubble (${data.username}) can play`);
+                      e.target.play().catch(err => console.error("Remote bubble autoplay blocked:", err));
+                    }}
                     ref={el => {
                       if (el && el.srcObject !== (data.stream || null)) {
                         el.srcObject = data.stream || null;
