@@ -11,8 +11,7 @@ const roomSchema = new mongoose.Schema({
     required: true,
   },
   host: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
+    type: String, // Store Clerk User ID
     required: true,
   },
   canvasData: {
@@ -20,8 +19,7 @@ const roomSchema = new mongoose.Schema({
     default: '',
   },
   participants: [{
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
+    type: String, // Store Clerk User IDs
   }],
 }, { timestamps: true });
 

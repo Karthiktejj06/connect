@@ -11,4 +11,4 @@ const cleanBaseUrl = rawUrl
 
 export const API_BASE_URL = cleanBaseUrl;
 export const API_URL = `${cleanBaseUrl}/api`;
-export const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+export const CLERK_PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;

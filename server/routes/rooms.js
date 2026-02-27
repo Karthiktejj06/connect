@@ -26,9 +26,7 @@ router.post('/', protect, async (req, res) => {
 // @route   GET /api/rooms/:roomId
 router.get('/:roomId', protect, async (req, res) => {
   try {
-    const room = await Room.findOne({ roomId: req.params.roomId })
-      .populate('host', 'username')
-      .populate('participants', 'username');
+    const room = await Room.findOne({ roomId: req.params.roomId });
 
     if (room) {
       res.json(room);

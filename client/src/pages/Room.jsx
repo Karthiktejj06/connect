@@ -3,9 +3,9 @@ import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
 import { 
-  Users, ChatBubble, Layout, Video, PhoneOff, Mic, MicOff, VideoOff, 
+  Users, Layout, Video, PhoneOff, Mic, MicOff, VideoOff, 
   Monitor, ScreenShareOff, ChevronLeft, ChevronRight, Send, Download,
-  Maximize2, Minimize2, Share2, LogOut, X
+  Maximize2, Minimize2, Share2, LogOut, X, Moon, Sun, MessageSquare
 } from 'lucide-react';
 import useSocket from '../hooks/useSocket';
 import Whiteboard from '../components/Whiteboard';
@@ -31,7 +31,6 @@ const Room = () => {
   const socket = useSocket(roomId, user);
   
   // Media States
-  const [localStream, setLocalStream] = useState(null);
   const [screenStream, setScreenStream] = useState(null);
   const [remoteFaceCams, setRemoteFaceCams] = useState({}); // { username: stream }
   const [remoteScreens, setRemoteScreens] = useState({}); // { username: stream }
@@ -73,8 +72,8 @@ const Room = () => {
       } else if (type === 'answer') {
         const pc = peerConnections.current[from];
         if (pc) await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
-      } else if (type === 'candidate') {
-        const pc = peerConnections.current[from];
+      } else if (type === 'candidate' || type === 'ice-candidate') {
+        const pc = createPeerConnection(from);
         if (pc) await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
       } else if (type === 'stream-stopped') {
         const { streamType } = data;
@@ -86,12 +85,14 @@ const Room = () => {
           return next;
         });
         
-        // If this user was being focused in the large overlay, clear it
-        if (focusedStream?.username === from) {
-          setFocusedStream(null);
-          setIsStreamExpanded(false);
-          // Note: mainStream is local only, so we don't touch it here
-        }
+        // Use functional update to ensure we have the latest focusedStream state
+        setFocusedStream(currentFocused => {
+          if (currentFocused?.username === from) {
+            setIsStreamExpanded(false);
+            return null;
+          }
+          return currentFocused;
+        });
       }
     };
     socket.on('signaling', handleSignaling);
@@ -166,6 +167,14 @@ const Room = () => {
       iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
     });
 
+    // Add local tracks to the connection immediately if active
+    if (isFaceCamActive && localFaceCam.current) {
+      localFaceCam.current.getTracks().forEach(track => pc.addTrack(track, localFaceCam.current));
+    }
+    if (isSharing && localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach(track => pc.addTrack(track, localStreamRef.current));
+    }
+
     pc.onicecandidate = (event) => {
       if (event.candidate) {
         socket.emit('signaling', { roomId, to: targetUser, type: 'candidate', data: { candidate: event.candidate } });
@@ -175,11 +184,6 @@ const Room = () => {
     pc.ontrack = (event) => {
       const stream = event.streams[0];
       setRemoteFaceCams(prev => ({ ...prev, [targetUser]: stream }));
-      
-      // Auto-focus if it's the first remote stream or if a screen share starts
-      if (Object.keys(remoteFaceCams).length === 0 || event.track.kind === 'video') {
-         // Optionally auto-expand if desired, but let's keep it manual for now
-      }
 
       // Cleanup if tracks end naturally
       event.track.onended = () => {
@@ -199,9 +203,13 @@ const Room = () => {
 
   const toggleScreenShare = async () => {
     if (isSharing) {
-      localStream.current?.getTracks().forEach(track => track.stop());
+      localStreamRef.current?.getTracks().forEach(track => track.stop());
       setIsSharing(false);
       setMainStream(null);
+      if (focusedStream?.username === 'Me' || !focusedStream) {
+        setFocusedStream(null);
+        setIsStreamExpanded(false);
+      }
       // Notify others
       socket.emit('signaling', { roomId, type: 'stream-stopped', data: { streamType: 'screen' } });
       return;
@@ -209,7 +217,7 @@ const Room = () => {
 
     try {
       const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
-      localStream.current = stream;
+      localStreamRef.current = stream;
       setIsSharing(true);
       setMainStream(stream);
 
@@ -228,6 +236,9 @@ const Room = () => {
       stream.getVideoTracks()[0].onended = () => {
         setIsSharing(false);
         setMainStream(null);
+        setFocusedStream(current => current?.username === 'Me' ? null : current);
+        setIsStreamExpanded(false);
+        socket.emit('signaling', { roomId, type: 'stream-stopped', data: { streamType: 'screen' } });
       };
     } catch (err) {
       toast.error('Could not open screen portal');
@@ -238,6 +249,10 @@ const Room = () => {
     if (isFaceCamActive) {
       localFaceCam.current?.getTracks().forEach(track => track.stop());
       setIsFaceCamActive(false);
+      if (focusedStream?.username === 'Me') {
+        setFocusedStream(null);
+        setIsStreamExpanded(false);
+      }
       // Notify others
       socket.emit('signaling', { roomId, type: 'stream-stopped', data: { streamType: 'camera' } });
       return;
@@ -390,32 +405,33 @@ const Room = () => {
             {(mainStream || focusedStream) && (
               <div className="aura-glass stream-overlay" style={{ 
                 position: 'absolute', 
-                top: '1.5rem', 
-                right: '1.5rem', 
-                width: isStreamExpanded ? '85%' : '380px', 
-                height: isStreamExpanded ? '85%' : 'auto',
+                top: isStreamExpanded ? '50%' : '1.5rem', 
+                right: isStreamExpanded ? '50%' : '1.5rem', 
+                transform: isStreamExpanded ? 'translate(50%, -50%)' : 'none',
+                width: isStreamExpanded ? '95%' : '380px', 
+                height: isStreamExpanded ? '90%' : 'auto',
                 borderRadius: 'var(--radius-lg)', 
                 overflow: 'hidden',
                 boxShadow: 'var(--shadow-aura)',
                 border: '1px solid var(--aura-primary)',
                 zIndex: 200,
                 transition: 'all 0.5s cubic-bezier(0.34, 1.56, 0.64, 1)',
-                background: 'rgba(0,0,0,0.8)'
+                background: 'rgba(0,0,0,0.9)'
               }}>
-                <div style={{ padding: '0.6rem 1.25rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(0,0,0,0.6)', color: 'white', backdropFilter: 'blur(10px)' }}>
+                <div style={{ padding: '0.75rem 1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(0,0,0,0.6)', color: 'white', backdropFilter: 'blur(10px)' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
                     <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#ef4444', animation: 'pulse 1.5s infinite' }} />
-                    <span style={{ fontSize: '0.75rem', fontWeight: '800', textTransform: 'uppercase' }}>
+                    <span style={{ fontSize: '0.75rem', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                       {focusedStream ? `${focusedStream.username}'s Essence` : 'Live Aura (Screen)'}
                     </span>
                   </div>
-                  <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  <div style={{ display: 'flex', gap: '0.8rem' }}>
                     <button 
                       onClick={() => setIsStreamExpanded(!isStreamExpanded)} 
-                      style={{ background: 'transparent', border: 'none', color: 'white', cursor: 'pointer', padding: '0.2rem' }}
-                      title={isStreamExpanded ? "Collapse" : "Expand"}
+                      style={{ background: 'transparent', border: 'none', color: 'white', cursor: 'pointer', padding: '0.2rem', display: 'flex' }}
+                      title={isStreamExpanded ? "Minimize" : "Maximize"}
                     >
-                      <Monitor size={18} />
+                      {isStreamExpanded ? <Minimize2 size={20} /> : <Maximize2 size={20} />}
                     </button>
                     <button 
                       onClick={() => {
@@ -423,9 +439,9 @@ const Room = () => {
                         setFocusedStream(null);
                         setIsStreamExpanded(false);
                       }} 
-                      style={{ background: 'transparent', border: 'none', color: 'white', cursor: 'pointer', padding: '0.2rem' }}
+                      style={{ background: 'transparent', border: 'none', color: 'white', cursor: 'pointer', padding: '0.2rem', display: 'flex' }}
                     >
-                      <X size={18} />
+                      <X size={20} />
                     </button>
                   </div>
                 </div>
@@ -461,8 +477,26 @@ const Room = () => {
               zIndex: 210
             }}>
               {isFaceCamActive && (
-                <div className="aura-glass" style={{ width: '160px', aspectRatio: '16/9', borderRadius: 'var(--radius-md)', overflow: 'hidden', boxShadow: 'var(--shadow-aura)', border: '2px solid var(--aura-primary)' }}>
+                <div 
+                  className="aura-glass" 
+                  onClick={() => {
+                    setFocusedStream({ username: 'Me', stream: localFaceCam.current });
+                  }}
+                  style={{ 
+                    width: '160px', 
+                    aspectRatio: '16/9', 
+                    borderRadius: 'var(--radius-md)', 
+                    overflow: 'hidden', 
+                    boxShadow: 'var(--shadow-aura)', 
+                    border: focusedStream?.username === 'Me' ? '2px solid var(--aura-primary)' : '2px solid var(--aura-secondary)',
+                    cursor: 'pointer',
+                    transition: 'all 0.3s ease'
+                  }}
+                >
                   <video ref={el => { if (el) el.srcObject = localFaceCam.current; }} autoPlay playsInline muted style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  <div style={{ position: 'absolute', bottom: '2px', left: '4px', fontSize: '10px', color: 'white', background: 'rgba(0,0,0,0.6)', padding: '2px 6px', borderRadius: '4px', backdropFilter: 'blur(4px)' }}>
+                    Me
+                  </div>
                 </div>
               )}
               {Object.entries(remoteFaceCams).map(([uname, stream]) => (
