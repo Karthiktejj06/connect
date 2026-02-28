@@ -15,7 +15,7 @@ const Whiteboard = ({ socket, roomId, tool, color, size }) => {
     const canvas = canvasRef.current;
     canvas.width = INTERNAL_WIDTH;
     canvas.height = INTERNAL_HEIGHT;
-    
+
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
@@ -79,7 +79,7 @@ const Whiteboard = ({ socket, roomId, tool, color, size }) => {
       const { x, y, lastX, lastY, color, size, tool } = drawData;
       const ctx = contextRef.current;
       if (!ctx) return;
-      
+
       ctx.save();
       if (tool === 'eraser') {
         ctx.globalCompositeOperation = 'destination-out';
@@ -87,7 +87,7 @@ const Whiteboard = ({ socket, roomId, tool, color, size }) => {
         ctx.globalCompositeOperation = 'source-over';
         ctx.strokeStyle = color;
       }
-      
+
       ctx.lineWidth = size;
       ctx.beginPath();
       ctx.moveTo(lastX, lastY);
@@ -117,10 +117,19 @@ const Whiteboard = ({ socket, roomId, tool, color, size }) => {
     const rect = canvas.getBoundingClientRect();
     const scaleX = INTERNAL_WIDTH / rect.width;
     const scaleY = INTERNAL_HEIGHT / rect.height;
-    
+
+    let clientX, clientY;
+    if (e.touches && e.touches.length > 0) {
+      clientX = e.touches[0].clientX;
+      clientY = e.touches[0].clientY;
+    } else {
+      clientX = e.clientX;
+      clientY = e.clientY;
+    }
+
     return {
-      x: (e.clientX - rect.left) * scaleX,
-      y: (e.clientY - rect.top) * scaleY
+      x: (clientX - rect.left) * scaleX,
+      y: (clientY - rect.top) * scaleY
     };
   };
 
@@ -147,7 +156,7 @@ const Whiteboard = ({ socket, roomId, tool, color, size }) => {
       ctx.globalCompositeOperation = 'source-over';
       ctx.strokeStyle = color;
     }
-    
+
     ctx.lineWidth = size;
     ctx.beginPath();
     ctx.moveTo(lastX, lastY);
@@ -192,14 +201,17 @@ const Whiteboard = ({ socket, roomId, tool, color, size }) => {
       onMouseMove={draw}
       onMouseUp={stopDrawing}
       onMouseLeave={stopDrawing}
-      style={{ 
-        display: 'block', 
+      onTouchStart={startDrawing}
+      onTouchMove={draw}
+      onTouchEnd={stopDrawing}
+      style={{
+        display: 'block',
         cursor: tool === 'eraser' ? 'cell' : 'crosshair',
         width: '100%',
         height: '100%',
         touchAction: 'none',
         background: 'transparent',
-        objectFit: 'contain' 
+        objectFit: 'contain'
       }}
     />
   );
